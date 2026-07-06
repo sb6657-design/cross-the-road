@@ -1,0 +1,1808 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>天天過馬路 3D (Crossy Road 3D)</title>
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Three.js -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <!-- FontAwesome Icons -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <style>
+        body {
+            margin: 0;
+            overflow: hidden;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            user-select: none;
+            -webkit-user-select: none;
+            background-color: #050510;
+            touch-action: none; /* 停用預設瀏覽器手勢，避免雙擊縮放與滑動重整 */
+        }
+        canvas {
+            display: block;
+            width: 100vw;
+            height: 100vh;
+        }
+        /* 像素風格復古按鈕 */
+        .pixel-btn {
+            box-shadow: 0 6px 0 #1e3a8a;
+            transition: all 0.1s ease;
+        }
+        .pixel-btn:active {
+            transform: translateY(4px);
+            box-shadow: 0 2px 0 #1e3a8a;
+        }
+        .touch-btn {
+            background: rgba(255, 255, 255, 0.2);
+            backdrop-filter: blur(4px);
+            border: 2px solid rgba(255, 255, 255, 0.4);
+            active-background: rgba(255, 255, 255, 0.5);
+        }
+        /* 呼吸燈特效 */
+        @keyframes pulse-glowing {
+            0%, 100% { opacity: 0.6; transform: scale(1); }
+            50% { opacity: 1; transform: scale(1.03); }
+        }
+        .pulse-glow {
+            animation: pulse-glowing 2s infinite ease-in-out;
+        }
+        @keyframes blink {
+            0%, 100% { opacity: 0.2; }
+            50% { opacity: 1; }
+        }
+        .blink-text {
+            animation: blink 1.5s infinite;
+        }
+    </style>
+</head>
+<body class="relative">
+
+    <!-- 遊戲主畫面畫布 -->
+    <div id="canvas-container" class="w-full h-full absolute inset-0 z-0"></div>
+
+    <!-- UI 疊加層 -->
+    <div class="absolute inset-0 z-10 flex flex-col justify-between pointer-events-none p-4 select-none">
+        
+        <!-- 頂部資訊列 -->
+        <div class="flex justify-between items-start w-full pointer-events-auto gap-2 flex-wrap md:flex-nowrap">
+            <!-- 左：分數看板 -->
+            <div class="bg-slate-900/80 backdrop-blur-md text-white px-4 py-2.5 rounded-2xl border-2 border-yellow-400 flex flex-col shadow-lg">
+                <span class="text-[10px] uppercase tracking-widest text-yellow-400 font-bold">SCORE 分數</span>
+                <span id="score-val" class="text-2xl font-extrabold tracking-wider">0</span>
+            </div>
+
+            <!-- 中左：金幣看板 -->
+            <div class="bg-slate-900/80 backdrop-blur-md text-white px-4 py-2.5 rounded-2xl border-2 border-amber-400 flex flex-col shadow-lg items-center">
+                <span class="text-[10px] uppercase tracking-widest text-amber-400 font-bold">COINS 金幣</span>
+                <span id="coin-val" class="text-2xl font-extrabold tracking-wider text-amber-300">🪙 0</span>
+            </div>
+
+            <!-- 中右：當前角色技能狀態看板 -->
+            <div id="ability-status" class="bg-slate-900/80 backdrop-blur-md text-white px-4 py-2 rounded-2xl border border-slate-700 flex items-center gap-2 shadow-lg max-w-[180px] md:max-w-xs">
+                <span class="text-xl" id="status-icon">🐔</span>
+                <div class="flex flex-col">
+                    <span class="text-[10px] uppercase tracking-widest text-slate-400 font-bold">技能狀態</span>
+                    <span id="status-text" class="text-xs font-bold text-cyan-400">極速跳躍 (已啟用)</span>
+                </div>
+            </div>
+
+            <!-- 右：最高分看板 -->
+            <div class="bg-slate-900/80 backdrop-blur-md text-white px-4 py-2.5 rounded-2xl border-2 border-emerald-400 flex flex-col shadow-lg items-end">
+                <span class="text-[10px] uppercase tracking-widest text-emerald-400 font-bold">BEST 最高</span>
+                <span id="best-val" class="text-2xl font-extrabold tracking-wider">0</span>
+            </div>
+        </div>
+
+        <!-- 畫面中央：遊戲大廳/開始首頁 -->
+        <div id="menu-overlay" class="m-auto max-w-md w-full bg-slate-950/90 backdrop-blur-md border-4 border-yellow-400 rounded-3xl p-6 pointer-events-auto shadow-2xl text-center text-white transition-all duration-300 transform scale-100">
+            <h1 class="text-4xl font-black text-transparent bg-clip-text bg-gradient-to-r from-yellow-300 via-amber-400 to-orange-500 mb-1 tracking-widest uppercase drop-shadow-lg pulse-glow">
+                天天過馬路 <span class="text-xs px-2 py-1 bg-yellow-400 text-black font-bold rounded-lg align-middle font-sans">3D HERO</span>
+            </h1>
+            <p class="text-[11px] text-slate-400 mb-4 font-mono">每個英雄都有不同的超能力，選出你的最愛！</p>
+
+            <!-- 角色選擇與技能介紹區 -->
+            <div class="mb-5">
+                <p class="text-sm font-bold text-yellow-400 mb-2"><i class="fa-solid fa-paw mr-1"></i> 選擇角色與技能</p>
+                <div class="grid grid-cols-3 gap-2">
+                    <!-- 小雞 -->
+                    <button onclick="selectChar('chicken')" id="char-chicken" class="char-card border-2 border-yellow-400 bg-yellow-400/20 rounded-xl p-2 hover:bg-yellow-400/30 transition-all flex flex-col items-center">
+                        <span class="text-2xl">🐔</span>
+                        <span class="text-xs mt-1 font-bold">小雞</span>
+                        <span class="text-[9px] bg-cyan-500 text-white px-1.5 py-0.5 rounded-full mt-1.5 scale-90">極速跳躍</span>
+                    </button>
+                    <!-- 粉紅豬 -->
+                    <button onclick="selectChar('pig')" id="char-pig" class="char-card border-2 border-slate-700 bg-slate-800/50 rounded-xl p-2 hover:bg-slate-800/80 transition-all flex flex-col items-center">
+                        <span class="text-2xl">🐷</span>
+                        <span class="text-xs mt-1 font-bold">粉紅豬</span>
+                        <span class="text-[9px] bg-yellow-500 text-black font-bold px-1.5 py-0.5 rounded-full mt-1.5 scale-90">防撞護盾</span>
+                    </button>
+                    <!-- 恐龍 -->
+                    <button onclick="selectChar('dino')" id="char-dino" class="char-card border-2 border-slate-700 bg-slate-800/50 rounded-xl p-2 hover:bg-slate-800/80 transition-all flex flex-col items-center">
+                        <span class="text-2xl">🦖</span>
+                        <span class="text-xs mt-1 font-bold">小恐龍</span>
+                        <span class="text-[9px] bg-red-500 text-white px-1.5 py-0.5 rounded-full mt-1.5 scale-90">踏碎樹木</span>
+                    </button>
+                </div>
+                
+                <!-- 動態技能描述說明 -->
+                <div id="skill-desc" class="mt-3 bg-slate-900 border border-slate-800 rounded-xl p-2.5 text-xs text-left">
+                    <span class="font-bold text-cyan-400 block mb-0.5">🐔 小雞被動：【輕功雞】</span>
+                    <p class="text-slate-300">跳躍動畫及冷卻時間極短（0.09秒），能以快如閃電的速度連續跳躍，穿梭馬路與躲避老鷹的最強高手！</p>
+                </div>
+            </div>
+
+            <!-- 操作與新機制說明 -->
+            <div class="bg-slate-900/50 rounded-xl p-3 mb-5 text-left text-xs text-slate-300 leading-relaxed border border-slate-800">
+                <span class="font-bold text-yellow-400 block mb-1"><i class="fa-solid fa-triangle-exclamation mr-1"></i> 關卡核心規則：</span>
+                <ul class="list-disc pl-4 space-y-1 font-sans text-[11px]">
+                    <li><strong class="text-amber-400">鏡頭會不斷自動向前滾動！</strong>若落後於畫面底部會直接被吞噬淘汰！</li>
+                    <li><strong class="text-cyan-400">分數越高，障礙物密度越高！</strong>馬路車流、河道浮木和火車的重生速度會大幅加快！</li>
+                    <li><strong class="text-yellow-400">黃金像素幣 🪙</strong>：隨機散落於地圖，吃得越多分數越亮眼！</li>
+                    <li>電腦版：按鍵盤 <span class="bg-slate-700 px-1 py-0.5 rounded text-white font-mono">▲▼◀▶</span> 或 <span class="bg-slate-700 px-1 py-0.5 rounded text-white font-mono">WASD</span> 移動</li>
+                    <li>滑動/輕點：在螢幕空白處**滑動**可控制轉向，**輕輕點擊一下**可直接朝前跳一步</li>
+                </ul>
+            </div>
+
+            <!-- 開始按鈕 -->
+            <button id="start-btn" onclick="startGame()" class="w-full py-4 bg-yellow-400 hover:bg-yellow-300 text-slate-950 font-black text-xl rounded-2xl pixel-btn border-b-4 border-amber-600 shadow-xl flex flex-col items-center justify-center">
+                <span class="flex items-center gap-2"><i class="fa-solid fa-play animate-bounce"></i> 開始挑戰</span>
+                <span class="text-[10px] font-mono tracking-widest text-slate-800 mt-1 uppercase blink-text font-bold">按 ENTER 鍵亦可直接開始</span>
+            </button>
+        </div>
+
+        <!-- 死亡畫面 (隱藏中) -->
+        <div id="gameover-overlay" class="hidden m-auto max-w-sm w-full bg-red-950/95 border-4 border-red-500 rounded-3xl p-6 pointer-events-auto shadow-2xl text-center text-white animate-bounce-short">
+            <div class="w-16 h-16 bg-red-600 rounded-full flex items-center justify-center mx-auto mb-4 border-2 border-white shadow-inner animate-pulse">
+                <i class="fa-solid fa-skull text-3xl text-white"></i>
+            </div>
+            <h2 class="text-3xl font-black text-red-500 mb-1 tracking-wider">GAME OVER!</h2>
+            <p id="death-reason" class="text-sm text-slate-300 mb-4 font-bold">你被車子撞飛了！</p>
+            
+            <div class="bg-black/40 rounded-xl p-3 mb-6 grid grid-cols-3 gap-2 text-center border border-red-900">
+                <div>
+                    <span class="text-xs text-slate-400 block">本次得分</span>
+                    <span id="final-score" class="text-2xl font-black text-white">0</span>
+                </div>
+                <div>
+                    <span class="text-xs text-slate-400 block">收集金幣</span>
+                    <span id="final-coins" class="text-2xl font-black text-amber-300">🪙 0</span>
+                </div>
+                <div>
+                    <span class="text-xs text-slate-400 block">歷史最高分</span>
+                    <span id="final-best" class="text-2xl font-black text-yellow-400">0</span>
+                </div>
+            </div>
+
+            <!-- 操作按鈕組：再來一次 & 更換角色 -->
+            <div class="flex gap-3">
+                <!-- 重新開始按鈕 -->
+                <button onclick="startGame()" class="flex-1 py-3 bg-red-500 hover:bg-red-400 text-white font-black text-sm rounded-2xl pixel-btn border-b-4 border-red-700 shadow-xl flex flex-col items-center justify-center">
+                    <span class="flex items-center gap-1.5"><i class="fa-solid fa-rotate-left"></i> 再來一次</span>
+                    <span class="text-[8px] font-mono tracking-wider text-red-200 mt-1 blink-text font-bold">ENTER鍵重玩</span>
+                </button>
+                <!-- 更換角色（返回首頁）按鈕 -->
+                <button onclick="backToLobby()" class="flex-1 py-3 bg-slate-800 hover:bg-slate-700 text-yellow-400 font-black text-sm rounded-2xl pixel-btn border-b-4 border-slate-900 shadow-xl flex flex-col items-center justify-center">
+                    <span class="flex items-center gap-1.5"><i class="fa-solid fa-users"></i> 更換角色</span>
+                    <span class="text-[8px] font-mono tracking-wider text-slate-400 mt-1 font-bold">返回首頁</span>
+                </button>
+            </div>
+        </div>
+
+        <!-- 底部：虛擬搖桿/手機方向鍵 -->
+        <div class="w-full max-w-xs mx-auto mb-2 flex flex-col items-center gap-2 pointer-events-auto md:max-w-sm opacity-60 hover:opacity-100 transition-opacity">
+            <!-- 向上前進 -->
+            <button id="ctrl-up" class="w-14 h-14 rounded-2xl text-white flex items-center justify-center touch-btn active:scale-95 transition-all text-xl shadow-lg" title="前進">
+                <i class="fa-solid fa-chevron-up"></i>
+            </button>
+            <div class="flex gap-8">
+                <!-- 向左 -->
+                <button id="ctrl-left" class="w-14 h-14 rounded-2xl text-white flex items-center justify-center touch-btn active:scale-95 transition-all text-xl shadow-lg" title="向左">
+                    <i class="fa-solid fa-chevron-left"></i>
+                </button>
+                <!-- 向後 -->
+                <button id="ctrl-down" class="w-14 h-14 rounded-2xl text-white flex items-center justify-center touch-btn active:scale-95 transition-all text-xl shadow-lg" title="後退">
+                    <i class="fa-solid fa-chevron-down"></i>
+                </button>
+                <!-- 向右 -->
+                <button id="ctrl-right" class="w-14 h-14 rounded-2xl text-white flex items-center justify-center touch-btn active:scale-95 transition-all text-xl shadow-lg" title="向右">
+                    <i class="fa-solid fa-chevron-right"></i>
+                </button>
+            </div>
+        </div>
+
+    </div>
+
+    <!-- 音樂/音效靜音控制按鈕 -->
+    <button id="sound-toggle" onclick="toggleMute()" class="absolute top-4 left-4 z-20 w-10 h-10 rounded-xl bg-slate-900/80 border border-slate-700 text-white flex items-center justify-center pointer-events-auto hover:bg-slate-800 transition-all">
+        <i id="sound-icon" class="fa-solid fa-volume-high"></i>
+    </button>
+
+    <!-- 遊戲核心邏輯 -->
+    <script>
+        // ----------------- 音效合成系統 (Web Audio API) -----------------
+        let audioCtx = null;
+        let isMuted = false;
+
+        function initAudio() {
+            if (!audioCtx) {
+                audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+            }
+        }
+
+        function toggleMute() {
+            isMuted = !isMuted;
+            const icon = document.getElementById('sound-icon');
+            if (isMuted) {
+                icon.className = 'fa-solid fa-volume-xmark';
+            } else {
+                icon.className = 'fa-solid fa-volume-high';
+            }
+        }
+
+        function playSound(type) {
+            if (isMuted) return;
+            initAudio();
+            if (!audioCtx) return;
+
+            const osc = audioCtx.createOscillator();
+            const gain = audioCtx.createGain();
+            osc.connect(gain);
+            gain.connect(audioCtx.destination);
+
+            const now = audioCtx.currentTime;
+
+            if (type === 'jump') {
+                // 復古躍進聲
+                osc.type = 'triangle';
+                osc.frequency.setValueAtTime(150, now);
+                osc.frequency.exponentialRampToValueAtTime(600, now + 0.12);
+                gain.gain.setValueAtTime(0.25, now);
+                gain.gain.linearRampToValueAtTime(0.01, now + 0.12);
+                osc.start(now);
+                osc.stop(now + 0.12);
+            } else if (type === 'crash') {
+                // 碰撞巨響
+                osc.type = 'sawtooth';
+                osc.frequency.setValueAtTime(120, now);
+                osc.frequency.linearRampToValueAtTime(30, now + 0.4);
+                gain.gain.setValueAtTime(0.4, now);
+                gain.gain.linearRampToValueAtTime(0.01, now + 0.4);
+                
+                // 加上一點低頻雜訊效果
+                const noiseOsc = audioCtx.createOscillator();
+                const noiseGain = audioCtx.createGain();
+                noiseOsc.type = 'square';
+                noiseOsc.frequency.setValueAtTime(60, now);
+                noiseOsc.frequency.linearRampToValueAtTime(10, now + 0.3);
+                noiseOsc.connect(noiseGain);
+                noiseGain.connect(audioCtx.destination);
+                noiseGain.gain.setValueAtTime(0.3, now);
+                noiseGain.gain.linearRampToValueAtTime(0.01, now + 0.3);
+                
+                noiseOsc.start(now);
+                noiseOsc.stop(now + 0.3);
+
+                osc.start(now);
+                osc.stop(now + 0.4);
+            } else if (type === 'splash') {
+                // 落水聲
+                osc.type = 'sine';
+                osc.frequency.setValueAtTime(400, now);
+                osc.frequency.exponentialRampToValueAtTime(80, now + 0.3);
+                gain.gain.setValueAtTime(0.3, now);
+                gain.gain.linearRampToValueAtTime(0.01, now + 0.3);
+                osc.start(now);
+                osc.stop(now + 0.3);
+            } else if (type === 'eagle') {
+                // 老鷹叫聲 (尖銳)
+                osc.type = 'sawtooth';
+                osc.frequency.setValueAtTime(800, now);
+                osc.frequency.linearRampToValueAtTime(1200, now + 0.2);
+                osc.frequency.linearRampToValueAtTime(600, now + 0.5);
+                gain.gain.setValueAtTime(0.2, now);
+                gain.gain.linearRampToValueAtTime(0.01, now + 0.5);
+                osc.start(now);
+                osc.stop(now + 0.5);
+            } else if (type === 'shield_break') {
+                // 護盾破裂聲 (水晶清脆破裂感)
+                osc.type = 'sine';
+                osc.frequency.setValueAtTime(1200, now);
+                osc.frequency.exponentialRampToValueAtTime(100, now + 0.3);
+                gain.gain.setValueAtTime(0.4, now);
+                gain.gain.linearRampToValueAtTime(0.01, now + 0.3);
+
+                const osc2 = audioCtx.createOscillator();
+                const gain2 = audioCtx.createGain();
+                osc2.type = 'triangle';
+                osc2.frequency.setValueAtTime(800, now);
+                osc2.frequency.exponentialRampToValueAtTime(500, now + 0.2);
+                osc2.connect(gain2);
+                gain2.connect(audioCtx.destination);
+                gain2.gain.setValueAtTime(0.3, now);
+                gain2.gain.linearRampToValueAtTime(0.01, now + 0.2);
+
+                osc.start(now);
+                osc.stop(now + 0.3);
+                osc2.start(now);
+                osc2.stop(now + 0.2);
+            } else if (type === 'shatter') {
+                // 踏碎木頭的巨響
+                osc.type = 'triangle';
+                osc.frequency.setValueAtTime(300, now);
+                osc.frequency.linearRampToValueAtTime(50, now + 0.25);
+                gain.gain.setValueAtTime(0.35, now);
+                gain.gain.linearRampToValueAtTime(0.01, now + 0.25);
+                osc.start(now);
+                osc.stop(now + 0.25);
+            } else if (type === 'coin') {
+                // 經典 8-bit 金幣清脆叮噹聲 (雙音符快速爬音)
+                osc.type = 'sine';
+                osc.frequency.setValueAtTime(987.77, now); // B5 
+                osc.frequency.setValueAtTime(1318.51, now + 0.08); // E6
+                gain.gain.setValueAtTime(0.2, now);
+                gain.gain.linearRampToValueAtTime(0.2, now + 0.08);
+                gain.gain.linearRampToValueAtTime(0.01, now + 0.25);
+                osc.start(now);
+                osc.stop(now + 0.25);
+            }
+        }
+
+
+        // ----------------- Three.js 引擎與遊戲設定 -----------------
+        let scene, camera, renderer;
+        let clock = new THREE.Clock();
+        const GRID_SIZE = 2.4; // 每一格的大小
+
+        // 遊戲狀態控制
+        let gameActive = false;
+        let score = 0;
+        let scoreCoins = 0; // 本局收集的金幣
+        let highScore = 0;
+        let selectedCharacter = 'chicken';
+
+        // 畫面自動滾動核心變數
+        let autoScrollZ = 0; // 當前滾動軸的 Z 軸位置 (世界座標)
+        const baseScrollSpeed = 1.0; // 基礎滾動速度 (每秒前進世界單位)
+
+        // 角色專屬機制變數
+        let hasShield = false; // 豬豬的護盾狀態
+        let shieldMesh = null; // 豬豬的 3D 護盾模型
+
+        // 核心物件
+        let player;
+        let lanes = []; // 所有當前渲染的車道
+        let laneIndex = 0; // 下一個要生成的車道索引
+        const visibleLanesCount = 28; // 畫面中維持的車道數
+
+        // 玩家定位與動畫
+        let playerGrid = { x: 0, z: 0 }; // 當前網格座標 (z 代表前進，x 代表左右)
+        let playerTargetPos = new THREE.Vector3(0, 0, 0);
+        let playerMoving = false;
+        let moveStartTime = 0;
+        let moveDuration = 0.15; // 每次跳躍時間秒數 (會隨小雞角色動態縮短)
+
+        // 老鷹計時器 (如果太久沒前進就引來老鷹)
+        let lastForwardMoveTime = 0;
+        const eagleTimeout = 8.0; // 8秒沒前進就警告，10秒抓走
+        let eagleSpawned = false;
+        let eagleMesh = null;
+
+        // 色彩配置與主題
+        const COLORS = {
+            grass: 0x4ade80,      // 草地 (綠)
+            grassAlt: 0x22c55e,   // 備用草地
+            road: 0x334155,       // 馬路 (深灰)
+            river: 0x38bdf8,      // 河流 (水藍)
+            railroad: 0x1e293b,   // 鐵路
+            dirt: 0x78350f,       // 泥土/樹幹
+            carColors: [0xef4444, 0x3b82f6, 0xf59e0b, 0xec4899, 0xa855f7, 0x14b8a6]
+        };
+
+        // 1. 初始化 Three.js 視圖
+        function initEngine() {
+            const container = document.getElementById('canvas-container');
+            
+            // 建立場景
+            scene = new THREE.Scene();
+            scene.background = new THREE.Color(0xdbeafe); // 天空淺藍
+            scene.fog = new THREE.FogExp2(0xdbeafe, 0.015);
+
+            // 建立正交投影相機 (實現斜等角經典視角)
+            const aspect = window.innerWidth / window.innerHeight;
+            const d = 16;
+            camera = new THREE.OrthographicCamera(-d * aspect, d * aspect, d, -d, 1, 1000);
+            
+            // 設置經典的 Crossy Road 斜向下視角
+            camera.position.set(15, 18, 15);
+            camera.lookAt(0, 0, 0);
+
+            // 渲染器
+            renderer = new THREE.WebGLRenderer({ antialias: true, alpha: false });
+            renderer.setSize(window.innerWidth, window.innerHeight);
+            renderer.shadowMap.enabled = true;
+            renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+            container.appendChild(renderer.domElement);
+
+            // 光源
+            const ambientLight = new THREE.AmbientLight(0xffffff, 0.6);
+            scene.add(ambientLight);
+
+            const dirLight = new THREE.DirectionalLight(0xffffff, 0.8);
+            dirLight.position.set(-20, 40, 20);
+            dirLight.castShadow = true;
+            dirLight.shadow.mapSize.width = 1024;
+            dirLight.shadow.mapSize.height = 1024;
+            dirLight.shadow.camera.near = 0.5;
+            dirLight.shadow.camera.far = 150;
+            const dShadow = 30;
+            dirLight.shadow.camera.left = -dShadow;
+            dirLight.shadow.camera.right = dShadow;
+            dirLight.shadow.camera.top = dShadow;
+            dirLight.shadow.camera.bottom = -dShadow;
+            scene.add(dirLight);
+
+            // 視窗調整大小自適應
+            window.addEventListener('resize', onWindowResize, false);
+        }
+
+        function onWindowResize() {
+            const aspect = window.innerWidth / window.innerHeight;
+            const d = 16;
+            camera.left = -d * aspect;
+            camera.right = d * aspect;
+            camera.top = d;
+            camera.bottom = -d;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+        }
+
+
+        // ----------------- 建立 3D 像素（Voxel）模型 -----------------
+
+        // 1. 玩家角色產生器
+        function createPlayerMesh(type) {
+            const playerGroup = new THREE.Group();
+
+            if (type === 'chicken') {
+                // --- 經典小雞 ---
+                // 身體
+                const bodyGeom = new THREE.BoxGeometry(0.9, 0.9, 0.9);
+                const bodyMat = new THREE.MeshLambertMaterial({ color: 0xffffff });
+                const body = new THREE.Mesh(bodyGeom, bodyMat);
+                body.position.y = 0.45;
+                body.castShadow = true;
+                body.receiveShadow = true;
+                playerGroup.add(body);
+
+                // 雞冠 (紅色)
+                const combGeom = new THREE.BoxGeometry(0.2, 0.3, 0.6);
+                const combMat = new THREE.MeshLambertMaterial({ color: 0xef4444 });
+                const comb = new THREE.Mesh(combGeom, combMat);
+                comb.position.set(0, 0.95, 0.1);
+                comb.castShadow = true;
+                playerGroup.add(comb);
+
+                // 嘴巴 (黃色)
+                const beakGeom = new THREE.BoxGeometry(0.3, 0.2, 0.3);
+                const beakMat = new THREE.MeshLambertMaterial({ color: 0xf59e0b });
+                const beak = new THREE.Mesh(beakGeom, beakMat);
+                beak.position.set(0, 0.5, 0.55);
+                beak.castShadow = true;
+                playerGroup.add(beak);
+
+                // 雙眼
+                const eyeGeom = new THREE.BoxGeometry(0.15, 0.15, 0.15);
+                const eyeMat = new THREE.MeshLambertMaterial({ color: 0x000000 });
+                
+                const leftEye = new THREE.Mesh(eyeGeom, eyeMat);
+                leftEye.position.set(0.46, 0.6, 0.2);
+                playerGroup.add(leftEye);
+
+                const rightEye = leftEye.clone();
+                rightEye.position.x = -0.46;
+                playerGroup.add(rightEye);
+
+                // 雙腳
+                const legGeom = new THREE.BoxGeometry(0.15, 0.3, 0.15);
+                const legMat = new THREE.MeshLambertMaterial({ color: 0xf59e0b });
+                
+                const leftLeg = new THREE.Mesh(legGeom, legMat);
+                leftLeg.position.set(0.2, 0.15, 0);
+                leftLeg.castShadow = true;
+                playerGroup.add(leftLeg);
+
+                const rightLeg = leftLeg.clone();
+                rightLeg.position.x = -0.2;
+                playerGroup.add(rightLeg);
+
+            } else if (type === 'pig') {
+                // --- 萌萌粉紅豬 ---
+                const bodyGeom = new THREE.BoxGeometry(0.9, 0.8, 1.1);
+                const bodyMat = new THREE.MeshLambertMaterial({ color: 0xfbcfe8 }); // 粉紅
+                const body = new THREE.Mesh(bodyGeom, bodyMat);
+                body.position.y = 0.4;
+                body.castShadow = true;
+                body.receiveShadow = true;
+                playerGroup.add(body);
+
+                // 鼻子
+                const snoutGeom = new THREE.BoxGeometry(0.4, 0.25, 0.2);
+                const snoutMat = new THREE.MeshLambertMaterial({ color: 0xf472b6 });
+                const snout = new THREE.Mesh(snoutGeom, snoutMat);
+                snout.position.set(0, 0.35, 0.6);
+                snout.castShadow = true;
+                playerGroup.add(snout);
+
+                // 雙眼
+                const eyeGeom = new THREE.BoxGeometry(0.15, 0.15, 0.15);
+                const eyeMat = new THREE.MeshLambertMaterial({ color: 0x000000 });
+                const leftEye = new THREE.Mesh(eyeGeom, eyeMat);
+                leftEye.position.set(0.46, 0.5, 0.3);
+                playerGroup.add(leftEye);
+                const rightEye = leftEye.clone();
+                rightEye.position.x = -0.46;
+                playerGroup.add(rightEye);
+
+                // 豬耳朵
+                const earGeom = new THREE.BoxGeometry(0.2, 0.2, 0.2);
+                const earMat = new THREE.MeshLambertMaterial({ color: 0xf472b6 });
+                const leftEar = new THREE.Mesh(earGeom, earMat);
+                leftEar.position.set(0.35, 0.8, 0);
+                playerGroup.add(leftEar);
+                const rightEar = leftEar.clone();
+                rightEar.position.x = -0.35;
+                playerGroup.add(rightEar);
+
+                // 四肢
+                const legGeom = new THREE.BoxGeometry(0.18, 0.2, 0.18);
+                const legMat = new THREE.MeshLambertMaterial({ color: 0xfbcfe8 });
+                for (let xVal of [-0.3, 0.3]) {
+                    for (let zVal of [-0.3, 0.3]) {
+                        const leg = new THREE.Mesh(legGeom, legMat);
+                        leg.position.set(xVal, 0.1, zVal);
+                        leg.castShadow = true;
+                        playerGroup.add(leg);
+                    }
+                }
+
+                // --- 豬豬專屬：3D 護盾網格 ---
+                if (hasShield) {
+                    const shieldGeom = new THREE.SphereGeometry(0.9, 16, 16);
+                    const shieldMat = new THREE.MeshBasicMaterial({
+                        color: 0xfacc15,
+                        transparent: true,
+                        opacity: 0.25,
+                        wireframe: true
+                    });
+                    shieldMesh = new THREE.Mesh(shieldGeom, shieldMat);
+                    shieldMesh.position.set(0, 0.45, 0);
+                    playerGroup.add(shieldMesh);
+                }
+
+            } else if (type === 'dino') {
+                // --- 酷炫小恐龍 ---
+                const bodyGeom = new THREE.BoxGeometry(0.9, 0.9, 0.9);
+                const bodyMat = new THREE.MeshLambertMaterial({ color: 0x10b981 }); // 綠
+                const body = new THREE.Mesh(bodyGeom, bodyMat);
+                body.position.y = 0.55;
+                body.castShadow = true;
+                body.receiveShadow = true;
+                playerGroup.add(body);
+
+                // 嘴巴與頭部前突
+                const mouthGeom = new THREE.BoxGeometry(0.7, 0.4, 0.4);
+                const mouth = new THREE.Mesh(mouthGeom, bodyMat);
+                mouth.position.set(0, 0.45, 0.55);
+                mouth.castShadow = true;
+                playerGroup.add(mouth);
+
+                // 尾巴
+                const tailGeom = new THREE.BoxGeometry(0.3, 0.3, 0.6);
+                const tail = new THREE.Mesh(tailGeom, bodyMat);
+                tail.position.set(0, 0.3, -0.65);
+                tail.castShadow = true;
+                playerGroup.add(tail);
+
+                // 背刺 (黃橘色)
+                const spikeGeom = new THREE.BoxGeometry(0.15, 0.15, 0.15);
+                const spikeMat = new THREE.MeshLambertMaterial({ color: 0xf59e0b });
+                for (let i = 0; i < 3; i++) {
+                    const spike = new THREE.Mesh(spikeGeom, spikeMat);
+                    spike.position.set(0, 1.05, -0.3 + (i * 0.3));
+                    playerGroup.add(spike);
+                }
+
+                // 眼睛
+                const eyeGeom = new THREE.BoxGeometry(0.15, 0.15, 0.15);
+                const eyeMat = new THREE.MeshLambertMaterial({ color: 0xffffff });
+                const pupilMat = new THREE.MeshLambertMaterial({ color: 0x000000 });
+                
+                const leftEye = new THREE.Mesh(eyeGeom, eyeMat);
+                leftEye.position.set(0.46, 0.7, 0.2);
+                playerGroup.add(leftEye);
+                const leftPupil = new THREE.Mesh(new THREE.BoxGeometry(0.08, 0.08, 0.08), pupilMat);
+                leftPupil.position.set(0.51, 0.7, 0.25);
+                playerGroup.add(leftPupil);
+
+                const rightEye = leftEye.clone();
+                rightEye.position.x = -0.46;
+                playerGroup.add(rightEye);
+                const rightPupil = leftPupil.clone();
+                rightPupil.position.x = -0.51;
+                playerGroup.add(rightPupil);
+
+                // 雙腳
+                const legGeom = new THREE.BoxGeometry(0.2, 0.25, 0.2);
+                const legMat = new THREE.MeshLambertMaterial({ color: 0x047857 });
+                const leftLeg = new THREE.Mesh(legGeom, legMat);
+                leftLeg.position.set(0.25, 0.125, 0);
+                leftLeg.castShadow = true;
+                playerGroup.add(leftLeg);
+                const rightLeg = leftLeg.clone();
+                rightLeg.position.x = -0.25;
+                playerGroup.add(rightLeg);
+            }
+
+            return playerGroup;
+        }
+
+        // 2. 樹木產生器 (草地上的障礙物)
+        function createTreeMesh() {
+            const tree = new THREE.Group();
+
+            // 樹幹 (咖啡色)
+            const trunkGeom = new THREE.BoxGeometry(0.5, 1.2, 0.5);
+            const trunkMat = new THREE.MeshLambertMaterial({ color: 0x78350f });
+            const trunk = new THREE.Mesh(trunkGeom, trunkMat);
+            trunk.position.y = 0.6;
+            trunk.castShadow = true;
+            trunk.receiveShadow = true;
+            tree.add(trunk);
+
+            // 樹冠 (綠色，不規則像素風疊加)
+            const leafColors = [0x15803d, 0x16a34a, 0x22c55e];
+            const sizeMap = [
+                { w: 1.4, h: 0.9, d: 1.4, y: 1.5, c: leafColors[0] },
+                { w: 1.1, h: 0.8, d: 1.1, y: 2.2, c: leafColors[1] },
+                { w: 0.7, h: 0.6, d: 0.7, y: 2.8, c: leafColors[2] }
+            ];
+
+            sizeMap.forEach(cfg => {
+                const leafGeom = new THREE.BoxGeometry(cfg.w, cfg.h, cfg.d);
+                const leafMat = new THREE.MeshLambertMaterial({ color: cfg.c });
+                const leaf = new THREE.Mesh(leafGeom, leafMat);
+                leaf.position.y = cfg.y;
+                leaf.castShadow = true;
+                tree.add(leaf);
+            });
+
+            return tree;
+        }
+
+        // 3. 汽車產生器 (預設長度在 Z 軸)
+        function createCarMesh() {
+            const car = new THREE.Group();
+            const color = COLORS.carColors[Math.floor(Math.random() * COLORS.carColors.length)];
+
+            // 底盤
+            const baseGeom = new THREE.BoxGeometry(1.4, 0.5, 2.3);
+            const baseMat = new THREE.MeshLambertMaterial({ color: color });
+            const base = new THREE.Mesh(baseGeom, baseMat);
+            base.position.y = 0.4;
+            base.castShadow = true;
+            base.receiveShadow = true;
+            car.add(base);
+
+            // 車頂
+            const topGeom = new THREE.BoxGeometry(1.2, 0.5, 1.3);
+            const topMat = new THREE.MeshLambertMaterial({ color: 0xf8fafc }); // 一般都配白色車頂
+            const top = new THREE.Mesh(topGeom, topMat);
+            top.position.set(0, 0.9, -0.2);
+            top.castShadow = true;
+            car.add(top);
+
+            // 車窗
+            const windowGeom = new THREE.BoxGeometry(1.22, 0.35, 0.9);
+            const windowMat = new THREE.MeshLambertMaterial({ color: 0x0f172a });
+            const win = new THREE.Mesh(windowGeom, windowMat);
+            win.position.set(0, 0.85, -0.2);
+            car.add(win);
+
+            // 輪胎
+            const wheelGeom = new THREE.BoxGeometry(0.3, 0.4, 0.4);
+            const wheelMat = new THREE.MeshLambertMaterial({ color: 0x1e293b });
+            const wheelPositions = [
+                [-0.75, 0.2, 0.6], [0.75, 0.2, 0.6],
+                [-0.75, 0.2, -0.6], [0.75, 0.2, -0.6]
+            ];
+            wheelPositions.forEach(pos => {
+                const w = new THREE.Mesh(wheelGeom, wheelMat);
+                w.position.set(pos[0], pos[1], pos[2]);
+                car.add(w);
+            });
+
+            // 車燈 (位於 Z 的正向)
+            const lightGeom = new THREE.BoxGeometry(0.2, 0.15, 0.1);
+            const lightMat = new THREE.MeshBasicMaterial({ color: 0xfef08a });
+            const l1 = new THREE.Mesh(lightGeom, lightMat);
+            l1.position.set(-0.4, 0.45, 1.16);
+            car.add(l1);
+            const l2 = l1.clone();
+            l2.position.x = 0.4;
+            car.add(l2);
+
+            return car;
+        }
+
+        // 4. 樹幹產生器 (漂浮在河上，預設長度在 Z 軸)
+        function createLogMesh(length) {
+            const log = new THREE.Group();
+            
+            // 樹幹本體
+            const bodyGeom = new THREE.BoxGeometry(1.2, 0.35, length);
+            const bodyMat = new THREE.MeshLambertMaterial({ color: 0x7c2d12 });
+            const body = new THREE.Mesh(bodyGeom, bodyMat);
+            body.position.y = 0.1;
+            body.castShadow = true;
+            body.receiveShadow = true;
+            log.add(body);
+
+            // 樹輪斷面裝飾
+            const ringGeom = new THREE.BoxGeometry(1.0, 0.25, 0.1);
+            const ringMat = new THREE.MeshLambertMaterial({ color: 0xd97706 });
+            const ring1 = new THREE.Mesh(ringGeom, ringMat);
+            ring1.position.set(0, 0.1, (length/2) + 0.01);
+            log.add(ring1);
+
+            const ring2 = ring1.clone();
+            ring2.position.z = -(length/2) - 0.01;
+            log.add(ring2);
+
+            return log;
+        }
+
+        // 5. 火車產生器 (預設長度在 Z 軸)
+        function createTrainMesh() {
+            const train = new THREE.Group();
+
+            // 火車非常長
+            const bodyGeom = new THREE.BoxGeometry(1.5, 1.4, 12);
+            const bodyMat = new THREE.MeshLambertMaterial({ color: 0xd90429 }); // 鮮豔深紅
+            const body = new THREE.Mesh(bodyGeom, bodyMat);
+            body.position.y = 0.8;
+            body.castShadow = true;
+            body.receiveShadow = true;
+            train.add(body);
+
+            // 車窗
+            const winMat = new THREE.MeshLambertMaterial({ color: 0xfef08a }); // 發光車窗
+            for (let z = -5; z <= 5; z += 1.5) {
+                const winGeom = new THREE.BoxGeometry(1.52, 0.4, 0.7);
+                const w1 = new THREE.Mesh(winGeom, winMat);
+                w1.position.set(0, 1.0, z);
+                train.add(w1);
+            }
+
+            // 車輪
+            const wheelGeom = new THREE.BoxGeometry(0.2, 0.4, 0.6);
+            const wheelMat = new THREE.MeshLambertMaterial({ color: 0x111111 });
+            for (let z = -5.5; z <= 5.5; z += 2.2) {
+                const wl = new THREE.Mesh(wheelGeom, wheelMat);
+                wl.position.set(-0.8, 0.2, z);
+                const wr = wl.clone();
+                wr.position.x = 0.8;
+                train.add(wl);
+                train.add(wr);
+            }
+
+            return train;
+        }
+
+        // 6. 老鷹產生器 (飢餓的老鷹，負責處決發呆玩家)
+        function createEagleMesh() {
+            const eagle = new THREE.Group();
+
+            // 身體 (黑/深褐)
+            const bodyGeom = new THREE.BoxGeometry(1.2, 0.6, 1.6);
+            const bodyMat = new THREE.MeshLambertMaterial({ color: 0x1e293b });
+            const body = new THREE.Mesh(bodyGeom, bodyMat);
+            body.castShadow = true;
+            eagle.add(body);
+
+            // 翅膀 (展開狀態)
+            const wingGeom = new THREE.BoxGeometry(1.8, 0.1, 0.8);
+            const wingMat = new THREE.MeshLambertMaterial({ color: 0x0f172a });
+            
+            const leftWing = new THREE.Mesh(wingGeom, wingMat);
+            leftWing.position.set(1.4, 0.1, 0);
+            eagle.add(leftWing);
+
+            const rightWing = leftWing.clone();
+            rightWing.position.x = -1.4;
+            eagle.add(rightWing);
+
+            // 鷹嘴 (鮮黃)
+            const beakGeom = new THREE.BoxGeometry(0.4, 0.4, 0.5);
+            const beakMat = new THREE.MeshLambertMaterial({ color: 0xfacc15 });
+            const beak = new THREE.Mesh(beakGeom, beakMat);
+            beak.position.set(0, -0.1, 1.0);
+            eagle.add(beak);
+
+            return eagle;
+        }
+
+        // 7. 黃金像素幣產生器 (3D 圓盤金幣 - 加亮黃金質感版)
+        function createCoinMesh() {
+            const coinGroup = new THREE.Group();
+
+            // 金幣主體圓盤 (直徑、厚度、圓滑度)
+            const coinGeom = new THREE.CylinderGeometry(0.32, 0.32, 0.14, 8);
+            const coinMat = new THREE.MeshStandardMaterial({ 
+                color: 0xffea00,       // 更加耀眼的正金黃色
+                roughness: 0.05, 
+                metalness: 0.95,       // 強烈的鏡面反射
+                emissive: 0xffd700,    // 黃金高亮自發光
+                emissiveIntensity: 0.7 // 大幅提昇亮度，使其閃閃發光
+            });
+            const coinBody = new THREE.Mesh(coinGeom, coinMat);
+            coinBody.rotation.x = Math.PI / 2; // 讓圓盤立起來
+            coinBody.castShadow = true;
+            coinGroup.add(coinBody);
+
+            // 內側刻印壓紋 (呈現 3D 浮雕像素感)
+            const innerGeom = new THREE.CylinderGeometry(0.18, 0.18, 0.16, 8);
+            const innerMat = new THREE.MeshStandardMaterial({ 
+                color: 0xffa500,       // 橙金色內底
+                roughness: 0.1, 
+                metalness: 0.9,
+                emissive: 0xff8c00,    // 亮橘發光色
+                emissiveIntensity: 0.5
+            });
+            const innerBody = new THREE.Mesh(innerGeom, innerMat);
+            innerBody.rotation.x = Math.PI / 2;
+            coinGroup.add(innerBody);
+
+            return coinGroup;
+        }
+
+
+        // ----------------- 地圖車道生成邏輯 -----------------
+
+        function createLane(index) {
+            const lane = new THREE.Group();
+            lane.position.z = index * GRID_SIZE;
+
+            // 隨機決定車道類型 (第 0~4 條必定是草地，保障安全起步)
+            let type = 'grass';
+            if (index > 4) {
+                const rand = Math.random();
+                if (rand < 0.40) {
+                    type = 'grass';
+                } else if (rand < 0.70) {
+                    type = 'road';
+                } else if (rand < 0.90) {
+                    type = 'river';
+                } else {
+                    type = 'railroad';
+                }
+            }
+
+            lane.userData = {
+                type: type,
+                index: index,
+                obstacles: [], // 放置在此車道上的障礙物模型物件
+                coins: [],     // 放置在此車道上的金幣模型物件
+                speed: 0,
+                direction: Math.random() < 0.5 ? 1 : -1, // 1: 左往右 (往 +X 移動), -1: 右往左 (往 -X 移動)
+                gridObstacles: Array(25).fill(false), // 網格佔用狀態 (x 從 -12 到 12)
+                lastSpawnTime: 0,
+                spawnDelay: 0
+            };
+
+            // 設定不同車道的專屬速度與重生週期
+            if (type === 'road') {
+                lane.userData.speed = (Math.random() * 3.5 + 3.0) * (Math.random() < 0.5 ? 1 : 1.15);
+                lane.userData.spawnDelay = Math.random() * 2 + 2.2;
+            } else if (type === 'river') {
+                lane.userData.speed = (Math.random() * 1.8 + 1.2) * 0.95;
+                lane.userData.spawnDelay = Math.random() * 2.5 + 2.4;
+            } else if (type === 'railroad') {
+                lane.userData.speed = 24; // 火車速度
+                lane.userData.spawnDelay = Math.random() * 7 + 6.5; // 鐵路本來就不常來
+            }
+
+            // 建立地表模型
+            let floorGeom, floorMat;
+            const width = 60; // 寬度無限長感覺
+
+            if (type === 'grass') {
+                floorGeom = new THREE.BoxGeometry(width, 0.4, GRID_SIZE);
+                // 像素方格斑駁色，增添復古感
+                const color = (index % 2 === 0) ? COLORS.grass : COLORS.grassAlt;
+                floorMat = new THREE.MeshLambertMaterial({ color: color });
+                const floor = new THREE.Mesh(floorGeom, floorMat);
+                floor.position.y = -0.2;
+                floor.receiveShadow = true;
+                lane.add(floor);
+
+                // 在草地上隨機種一些樹木 (樹木也是格線系統，X範圍 -10 到 10，避開出發點 X=0)
+                for (let x = -10; x <= 10; x++) {
+                    if (x === 0 && index < 3) continue; // 初始起點絕對不種樹
+                    if (Math.random() < 0.22) {
+                        const tree = createTreeMesh();
+                        tree.position.x = x * GRID_SIZE;
+                        tree.position.y = 0;
+                        lane.add(tree);
+                        // 將網格標記為佔用
+                        lane.userData.gridObstacles[x + 12] = true;
+                    }
+                }
+
+            } else if (type === 'road') {
+                floorGeom = new THREE.BoxGeometry(width, 0.35, GRID_SIZE);
+                floorMat = new THREE.MeshLambertMaterial({ color: COLORS.road });
+                const floor = new THREE.Mesh(floorGeom, floorMat);
+                floor.position.y = -0.175;
+                floor.receiveShadow = true;
+                lane.add(floor);
+
+                // 馬路中央黃色虛線
+                if (index % 2 === 0) {
+                    for (let x = -28; x <= 28; x += 4) {
+                        const dashGeom = new THREE.BoxGeometry(1.5, 0.02, 0.15);
+                        const dashMat = new THREE.MeshBasicMaterial({ color: 0xfef08a });
+                        const dash = new THREE.Mesh(dashGeom, dashMat);
+                        dash.position.set(x, 0.01, 0);
+                        lane.add(dash);
+                    }
+                }
+
+                // 初始生成一些汽車，讓玩家一進遊戲地圖不是空的 (拉開車輛間距避免重疊)
+                const numInitialCars = Math.floor(Math.random() * 2) + 2;
+                let lastX = -25;
+                for (let i = 0; i < numInitialCars; i++) {
+                    const car = createCarMesh();
+                    lastX += (Math.random() * 12 + 10);
+                    car.position.x = lastX > 25 ? -20 : lastX;
+                    // 汽車朝向：1 朝向 +X (Math.PI / 2)，-1 朝向 -X (-Math.PI / 2)
+                    car.rotation.y = lane.userData.direction === 1 ? Math.PI / 2 : -Math.PI / 2;
+                    lane.add(car);
+                    lane.userData.obstacles.push(car);
+                }
+
+            } else if (type === 'river') {
+                floorGeom = new THREE.BoxGeometry(width, 0.2, GRID_SIZE);
+                floorMat = new THREE.MeshLambertMaterial({ color: COLORS.river });
+                const floor = new THREE.Mesh(floorGeom, floorMat);
+                floor.position.y = -0.1;
+                floor.receiveShadow = true;
+                lane.add(floor);
+
+                // 初始生成一些樹幹 (拉開間距避免重疊)
+                const numLogs = Math.floor(Math.random() * 2) + 2;
+                let lastX = -25;
+                for (let i = 0; i < numLogs; i++) {
+                    const logLength = Math.random() < 0.5 ? 4.5 : 6.5; // 樹幹長度
+                    const log = createLogMesh(logLength);
+                    lastX += (Math.random() * 14 + 12);
+                    log.position.x = lastX > 25 ? -20 : lastX;
+                    log.userData = { length: logLength };
+                    // 樹幹朝向同樣需要旋轉，對準河流方向
+                    log.rotation.y = lane.userData.direction === 1 ? Math.PI / 2 : -Math.PI / 2;
+                    lane.add(log);
+                    lane.userData.obstacles.push(log);
+                }
+
+            } else if (type === 'railroad') {
+                floorGeom = new THREE.BoxGeometry(width, 0.35, GRID_SIZE);
+                floorMat = new THREE.MeshLambertMaterial({ color: COLORS.railroad });
+                const floor = new THREE.Mesh(floorGeom, floorMat);
+                floor.position.y = -0.175;
+                floor.receiveShadow = true;
+                lane.add(floor);
+
+                // 畫鐵軌 (兩條長鋼軌與枕木)
+                const railGeom = new THREE.BoxGeometry(width, 0.08, 0.1);
+                const railMat = new THREE.MeshLambertMaterial({ color: 0x94a3b8 });
+                const rail1 = new THREE.Mesh(railGeom, railMat);
+                rail1.position.set(0, 0.04, -0.5);
+                lane.add(rail1);
+                const rail2 = rail1.clone();
+                rail2.position.z = 0.5;
+                lane.add(rail2);
+
+                // 枕木
+                for (let x = -30; x <= 30; x += 2) {
+                    const sleeperGeom = new THREE.BoxGeometry(0.3, 0.05, 1.8);
+                    const sleeperMat = new THREE.MeshLambertMaterial({ color: 0x451a03 });
+                    const sleeper = new THREE.Mesh(sleeperGeom, sleeperMat);
+                    sleeper.position.set(x, 0.02, 0);
+                    lane.add(sleeper);
+                }
+
+                // 鐵路紅綠訊號燈
+                const lightPoleGeom = new THREE.BoxGeometry(0.2, 2.5, 0.2);
+                const lightPoleMat = new THREE.MeshLambertMaterial({ color: 0x334155 });
+                const pole = new THREE.Mesh(lightPoleGeom, lightPoleMat);
+                pole.position.set(8, 1.25, 1.0);
+                lane.add(pole);
+
+                const lightBoxGeom = new THREE.BoxGeometry(0.5, 0.8, 0.5);
+                const box = new THREE.Mesh(lightBoxGeom, lightPoleMat);
+                box.position.set(8, 2.5, 1.0);
+                lane.add(box);
+
+                const signalLightGeom = new THREE.BoxGeometry(0.2, 0.2, 0.2);
+                const signalLightMat = new THREE.MeshBasicMaterial({ color: 0x22c55e }); // 預設逆向綠燈
+                const signalLight = new THREE.Mesh(signalLightGeom, signalLightMat);
+                signalLight.position.set(8, 2.5, 0.7);
+                lane.add(signalLight);
+                lane.userData.signalLightMesh = signalLight; // 保存引用以動態切換紅綠燈
+            }
+
+            // --- 隨機金幣生成邏輯 (與樹木避開，22% 生成率) ---
+            if (index > 2 && Math.random() < 0.22) {
+                const coinX = Math.floor(Math.random() * 11) - 5; // X座標範圍 -5 到 5
+                const gridXIndex = coinX + 12;
+                
+                // 草地不能重疊樹木，馬路、鐵路或河流(樹幹上不生成，僅限路/草)
+                const isGrassAndEmpty = (type === 'grass' && !lane.userData.gridObstacles[gridXIndex]);
+                const isRoadOrRail = (type === 'road' || type === 'railroad');
+
+                if (isGrassAndEmpty || isRoadOrRail) {
+                    const coin = createCoinMesh();
+                    coin.position.set(coinX * GRID_SIZE, 0.5, 0); // 浮空高度 0.5
+                    lane.add(coin);
+                    lane.userData.coins.push(coin);
+                }
+            }
+
+            scene.add(lane);
+            return lane;
+        }
+
+        // 刷新車道，維持玩家前進後隨時生成新地圖並移除舊車道
+        function updateMap() {
+            // 改為基於「視角滾動軸 autoScrollZ」動態生成與回收車道，防止滾動時突然跳出畫面
+            const currentScrollGrid = Math.floor(autoScrollZ / GRID_SIZE);
+
+            // 補足前面的車道
+            while (lanes.length < visibleLanesCount || lanes[lanes.length - 1].userData.index < currentScrollGrid + 20) {
+                const nextLane = createLane(laneIndex);
+                lanes.push(nextLane);
+                laneIndex++;
+            }
+
+            // 移除落後畫面太遠的舊車道以維持效能
+            while (lanes[0] && lanes[0].userData.index < currentScrollGrid - 8) {
+                const oldLane = lanes.shift();
+                scene.remove(oldLane);
+                
+                // 釋放記憶體
+                oldLane.traverse(child => {
+                    if (child.isMesh) {
+                        child.geometry.dispose();
+                        if (Array.isArray(child.material)) {
+                            child.material.forEach(m => m.dispose());
+                        } else {
+                            child.material.dispose();
+                        }
+                    }
+                });
+            }
+        }
+
+
+        // ----------------- 遊戲動態邏輯（生命週期、每幀更新、碰撞） -----------------
+
+        // 更新頂部 HUD 的角色能力狀態指示器
+        function updateAbilityHUD() {
+            const iconEl = document.getElementById('status-icon');
+            const textEl = document.getElementById('status-text');
+
+            if (selectedCharacter === 'chicken') {
+                iconEl.innerText = '🐔';
+                textEl.innerText = '極速跳躍 (已啟用)';
+                textEl.className = 'text-xs font-bold text-cyan-400';
+            } else if (selectedCharacter === 'pig') {
+                iconEl.innerText = '🐷';
+                if (hasShield) {
+                    textEl.innerText = '金庫護盾 (保護中)';
+                    textEl.className = 'text-xs font-bold text-yellow-400 animate-pulse';
+                } else {
+                    textEl.innerText = '護盾已被撞碎 💥';
+                    textEl.className = 'text-xs font-bold text-red-400';
+                }
+            } else if (selectedCharacter === 'dino') {
+                iconEl.innerText = '🦖';
+                textEl.innerText = '怪獸踐踏 (可撞碎樹)';
+                textEl.className = 'text-xs font-bold text-emerald-400';
+            }
+        }
+
+        // 初始化或重置遊戲
+        function resetGame() {
+            // 根據角色決定能力狀態
+            if (selectedCharacter === 'chicken') {
+                moveDuration = 0.09; // 小雞跳得超快！
+                hasShield = false;
+            } else if (selectedCharacter === 'pig') {
+                moveDuration = 0.16; // 豬豬標準速度
+                hasShield = true; // 豬豬自帶盾
+            } else if (selectedCharacter === 'dino') {
+                moveDuration = 0.16; // 恐龍標準速度
+                hasShield = false;
+            }
+
+            updateAbilityHUD();
+
+            // 清理場景中的舊物體
+            lanes.forEach(l => scene.remove(l));
+            lanes = [];
+            laneIndex = 0;
+            if (player) scene.remove(player);
+            if (eagleMesh) scene.remove(eagleMesh);
+
+            score = 0;
+            scoreCoins = 0; // 重置金幣收集
+            document.getElementById('score-val').innerText = score;
+            document.getElementById('coin-val').innerText = '🪙 0';
+            eagleSpawned = false;
+
+            // 初始化自動滾動起點 (起點稍微偏向玩家後方，保障開場準備時間)
+            autoScrollZ = -1.5 * GRID_SIZE;
+
+            // 初始化玩家 3D 模型
+            player = createPlayerMesh(selectedCharacter);
+            scene.add(player);
+
+            // 重置玩家定位與動作
+            playerGrid = { x: 0, z: 0 };
+            playerTargetPos.set(0, 0, 0);
+            player.position.set(0, 0, 0);
+            player.rotation.set(0, 0, 0);
+            playerMoving = false;
+
+            // 生成最初的地圖
+            for (let i = -5; i < visibleLanesCount - 5; i++) {
+                const lane = createLane(i);
+                lanes.push(lane);
+                laneIndex = i + 1;
+            }
+
+            // 重置相機
+            camera.position.set(15, 18, 15);
+            camera.lookAt(0, 0, 0);
+
+            lastForwardMoveTime = clock.getElapsedTime();
+            clock.getDelta(); // 重置時間差
+        }
+
+        // 選擇角色
+        function selectChar(charType) {
+            selectedCharacter = charType;
+            
+            // 更新 UI 邊框亮起
+            document.querySelectorAll('.char-card').forEach(card => {
+                card.className = card.className.replace('border-yellow-400 bg-yellow-400/20', 'border-slate-700 bg-slate-800/50');
+            });
+            const activeCard = document.getElementById(`char-${charType}`);
+            activeCard.className = activeCard.className.replace('border-slate-700 bg-slate-800/50', 'border-yellow-400 bg-yellow-400/20');
+
+            // 更新技能描述欄位
+            const descEl = document.getElementById('skill-desc');
+            if (charType === 'chicken') {
+                descEl.innerHTML = `
+                    <span class="font-bold text-cyan-400 block mb-0.5">🐔 小雞被動：【輕功雞】</span>
+                    <p class="text-slate-300">跳躍動畫及冷卻時間極短（0.09秒），能以快如閃電的速度連續跳躍，穿梭馬路與躲避老鷹的最強高手！</p>
+                `;
+            } else if (charType === 'pig') {
+                descEl.innerHTML = `
+                    <span class="font-bold text-yellow-400 block mb-0.5">🐷 粉紅豬被動：【金庫護盾】</span>
+                    <p class="text-slate-300">出場自帶一個金黃色的磁力防護罩！可以抵擋**一次**迎面而來的小汽車撞擊，護盾破裂後失效。（對火車/落水無效）</p>
+                `;
+            } else if (charType === 'dino') {
+                descEl.innerHTML = `
+                    <span class="font-bold text-emerald-400 block mb-0.5">🦖 小恐龍被動：【怪獸踐踏】</span>
+                    <p class="text-slate-300">力量驚人！前方若有阻擋前進的**樹木**，恐龍可直接「踏碎樹木」強行穿過，讓你在森林區域所向批靡！</p>
+                `;
+            }
+
+            playSound('jump');
+
+            // 如果遊戲還沒開始，立刻在背景重置並展示角色外觀
+            if (!gameActive) {
+                if (player) scene.remove(player);
+                // 展示時暫時將護盾開啟以利觀賞
+                if (charType === 'pig') hasShield = true;
+                player = createPlayerMesh(selectedCharacter);
+                scene.add(player);
+                updateAbilityHUD();
+            }
+        }
+
+        // 開始遊戲
+        function startGame() {
+            // 隱藏全部 Overlay
+            document.getElementById('menu-overlay').classList.add('hidden');
+            document.getElementById('gameover-overlay').classList.add('hidden');
+            
+            initAudio();
+            resetGame();
+            gameActive = true;
+        }
+
+        // 結束遊戲回到大廳展示角色首頁 (允許死後換角色)
+        function backToLobby() {
+            gameActive = false;
+            document.getElementById('gameover-overlay').classList.add('hidden');
+            document.getElementById('menu-overlay').classList.remove('hidden');
+
+            // 重置大廳 3D 預覽環境
+            lanes.forEach(l => scene.remove(l));
+            lanes = [];
+            laneIndex = 0;
+            if (player) scene.remove(player);
+            if (eagleMesh) scene.remove(eagleMesh);
+
+            // 重新在展示台中心產生當前所選角色
+            hasShield = (selectedCharacter === 'pig');
+            player = createPlayerMesh(selectedCharacter);
+            scene.add(player);
+
+            // 預建一些觀賞背景地圖
+            for (let i = -5; i < 15; i++) {
+                const lane = createLane(i);
+                lanes.push(lane);
+                laneIndex = i + 1;
+            }
+
+            updateAbilityHUD();
+        }
+
+        // 結束遊戲
+        function gameOver(reason) {
+            if (!gameActive) return;
+            gameActive = false;
+
+            playSound('crash');
+
+            // 儲存與顯示分數
+            if (score > highScore) {
+                highScore = score;
+                document.getElementById('best-val').innerText = highScore;
+            }
+            document.getElementById('final-score').innerText = score;
+            document.getElementById('final-coins').innerText = `🪙 ${scoreCoins}`;
+            document.getElementById('final-best').innerText = highScore;
+            document.getElementById('death-reason').innerText = reason;
+
+            // 顯示 GameOver Overlay
+            document.getElementById('gameover-overlay').classList.remove('hidden');
+        }
+
+        // 2. 玩家移動操作響應
+        function movePlayer(dirX, dirZ) {
+            if (!gameActive) return;
+
+            // 重置老鷹發呆計時器（只要玩家有任何有效移動嘗試，就不算發呆）
+            lastForwardMoveTime = clock.getElapsedTime();
+
+            if (playerMoving) return;
+
+            const nextX = playerGrid.x + dirX;
+            const nextZ = playerGrid.z + dirZ;
+
+            // 限制邊界 (左右不超出 -8 到 8 網格)
+            if (nextX < -8 || nextX > 8) return;
+
+            // 尋找目標車道
+            const targetLane = lanes.find(l => l.userData.index === nextZ);
+            if (!targetLane) return; // 防呆防空
+
+            // 檢查前進/左右目標點是否有障礙物 (例如草地上的樹木)
+            if (targetLane.userData.type === 'grass') {
+                const gridXIndex = nextX + 12; // 轉換為正值索引
+                if (targetLane.userData.gridObstacles[gridXIndex]) {
+                    
+                    // --- 恐龍特殊能力：踏碎樹木 ---
+                    if (selectedCharacter === 'dino') {
+                        // 尋找並摧毀車道上對應 X 座標的樹木 Mesh
+                        const targetXWorld = nextX * GRID_SIZE;
+                        for (let i = targetLane.children.length - 1; i >= 0; i--) {
+                            const child = targetLane.children[i];
+                            // 樹木是群組物件 (Group)，判斷 X 座標是否極接近
+                            if (child instanceof THREE.Group && Math.abs(child.position.x - targetXWorld) < 0.1) {
+                                targetLane.remove(child);
+                                break;
+                            }
+                        }
+                        // 清除該格的碰撞佔用標記
+                        targetLane.userData.gridObstacles[gridXIndex] = false;
+                        
+                        // 播放專屬踏碎音效
+                        playSound('shatter');
+                        
+                        // 讓恐龍晃動一下表示用力踐踏
+                        player.rotation.x = 0.3;
+                        setTimeout(() => { player.rotation.x = 0; }, 150);
+
+                    } else {
+                        // 一般角色：撞到樹，無法前進
+                        return;
+                    }
+                }
+            }
+
+            // 轉動角色方向
+            if (dirZ === 1) player.rotation.y = 0; // 朝前
+            if (dirZ === -1) player.rotation.y = Math.PI; // 朝後
+            if (dirX === 1) player.rotation.y = Math.PI / 2; // 朝左 (畫面右)
+            if (dirX === -1) player.rotation.y = -Math.PI / 2; // 朝右 (畫面左)
+
+            // 設定目標世界座標
+            playerGrid.x = nextX;
+            playerGrid.z = nextZ;
+            playerTargetPos.set(playerGrid.x * GRID_SIZE, 0, playerGrid.z * GRID_SIZE);
+
+            playerMoving = true;
+            moveStartTime = clock.getElapsedTime();
+
+            // 如果是前進，增加分數並重置老鷹工作時間
+            if (dirZ === 1) {
+                if (playerGrid.z > score) {
+                    score = playerGrid.z;
+                    document.getElementById('score-val').innerText = score;
+                }
+            }
+
+            playSound('jump');
+            updateMap();
+        }
+
+        // 3. 每幀更新迴圈
+        function animate() {
+            requestAnimationFrame(animate);
+
+            const delta = clock.getDelta();
+            const time = clock.getElapsedTime();
+
+            if (gameActive) {
+                // (A) 畫面持續自動滾動控制
+                // 基礎滾動速度隨玩家分數提升（每 50 分增加一次挑戰難度速度）
+                let currentScrollSpeed = baseScrollSpeed + Math.min(2.0, score * 0.02);
+                
+                // 防脫節機制：若玩家跑在非常前面，滾動軸加速追上，防止玩家跳出畫面頂部
+                let playerLead = player.position.z - autoScrollZ;
+                if (playerLead > 5.5 * GRID_SIZE) {
+                    currentScrollSpeed += (playerLead - 5.5 * GRID_SIZE) * 2.8; 
+                }
+                
+                // 動態更新滾動軸
+                autoScrollZ += currentScrollSpeed * delta;
+
+                // (B) 掉隊出鏡死亡檢測：取玩家位置與跳躍目標位置的最大值，避免跳躍在半空中時判定冤死
+                const activeZ = playerMoving ? Math.max(player.position.z, playerTargetPos.z) : player.position.z;
+                if (activeZ < autoScrollZ - (4.2 * GRID_SIZE)) {
+                    gameOver('你動作太慢了，跟不上前進的鏡頭，被吞噬淘汰！💀💨');
+                }
+
+                // 旋轉豬豬的護盾，增加視覺流光感
+                if (selectedCharacter === 'pig' && hasShield && shieldMesh) {
+                    shieldMesh.rotation.y += delta * 2;
+                    shieldMesh.rotation.x += delta * 1;
+                }
+
+                // (C) 處理跳躍動態插值 (拱形跳躍曲線)
+                if (playerMoving) {
+                    const elapsed = time - moveStartTime;
+                    const progress = Math.min(elapsed / moveDuration, 1);
+
+                    // X 與 Z 軸線性平滑移動
+                    player.position.x = THREE.MathUtils.lerp(player.position.x, playerTargetPos.x, progress);
+                    player.position.z = THREE.MathUtils.lerp(player.position.z, playerTargetPos.z, progress);
+
+                    // Y 軸拋物線高跳弧度
+                    const jumpHeight = 0.8;
+                    player.position.y = Math.sin(progress * Math.PI) * jumpHeight;
+
+                    if (progress >= 1) {
+                        player.position.copy(playerTargetPos);
+                        playerMoving = false;
+
+                        // 著陸後：如果此時落在「河流」車道，需確認是否踩在木頭上
+                        const currentLane = lanes.find(l => l.userData.index === playerGrid.z);
+                        if (currentLane && currentLane.userData.type === 'river') {
+                            const onLog = checkOnLog(currentLane);
+                            if (!onLog) {
+                                playSound('splash');
+                                gameOver('你掉進水裡淹死了！🌊');
+                            }
+                        }
+                    }
+                }
+
+                // (D) 河流漂浮：如果玩家當前停在河流的木頭上，會隨著木頭速度橫向漂移
+                const currentLane = lanes.find(l => l.userData.index === playerGrid.z);
+                if (currentLane && currentLane.userData.type === 'river' && !playerMoving) {
+                    // 木頭移動方向 * 速度
+                    const speed = currentLane.userData.speed;
+                    const dir = currentLane.userData.direction;
+                    player.position.x += speed * dir * delta;
+                    
+                    // 隨時同步回 playerGrid.x 以防誤差，且若漂移超出螢幕則死亡
+                    playerGrid.x = player.position.x / GRID_SIZE;
+                    if (player.position.x < -10 * GRID_SIZE || player.position.x > 10 * GRID_SIZE) {
+                        gameOver('你漂出地圖邊界了！');
+                    }
+                }
+
+                // (E) 車道上的動態障礙物 (汽車、木頭、火車) 的重生與移動
+                // 動態縮短重生冷卻時間（分數越高，車輛和浮木重生間隔越密，最高只縮減到原來的 60%）
+                const diffMult = Math.max(0.60, 1 - (score * 0.0055));
+
+                lanes.forEach(lane => {
+                    const speed = lane.userData.speed;
+                    const dir = lane.userData.direction;
+                    const type = lane.userData.type;
+
+                    // 1. 移動車道上的障礙物
+                    lane.userData.obstacles.forEach(obs => {
+                        obs.position.x += speed * dir * delta;
+                    });
+
+                    // 2. 清理超出地圖的障礙物 (寬度設 30 為邊界回收點)
+                    lane.userData.obstacles = lane.userData.obstacles.filter(obs => {
+                        // 當 direction = 1 (往右跑)，超過 30 即回收。當 direction = -1 (往左跑)，低於 -30 即回收。
+                        const isOut = (dir === 1 && obs.position.x > 30) || (dir === -1 && obs.position.x < -30);
+                        if (isOut) {
+                            lane.remove(obs);
+                            return false;
+                        }
+                        return true;
+                    });
+
+                    // 3. 隨時動態重生新障礙物
+                    if (type === 'road' || type === 'river' || type === 'railroad') {
+                        if (time - lane.userData.lastSpawnTime > lane.userData.spawnDelay) {
+                            
+                            // 【關鍵防車禍、包夾過密機制】：檢查起點是否已有重合車輛，保持發車安全車距
+                            const spawnX = dir === 1 ? -30 : 30;
+                            let spawnPointClear = true;
+                            lane.userData.obstacles.forEach(obs => {
+                                if (Math.abs(obs.position.x - spawnX) < 8.2) {
+                                    spawnPointClear = false;
+                                }
+                            });
+
+                            if (!spawnPointClear) {
+                                // 起點還塞車，往後延期 0.4 秒發車
+                                lane.userData.lastSpawnTime = time - lane.userData.spawnDelay + 0.4;
+                                return;
+                            }
+
+                            // 鐵路警告信號燈：在火車即將出發前 1.5 秒閃紅燈
+                            if (type === 'railroad') {
+                                const signal = lane.userData.signalLightMesh;
+                                if (signal) {
+                                    // 閃爍紅色
+                                    const pulseColor = Math.floor(time * 5) % 2 === 0 ? 0xef4444 : 0x1e293b;
+                                    signal.material.color.setHex(pulseColor);
+                                }
+                            }
+
+                            // 實際產生障礙物
+                            let newObs;
+                            if (type === 'road') {
+                                newObs = createCarMesh();
+                                // 如果往右 (dir = 1) 旋轉 90 度，往左 (dir = -1) 旋轉 -90 度
+                                newObs.rotation.y = dir === 1 ? Math.PI / 2 : -Math.PI / 2;
+                            } else if (type === 'river') {
+                                const logLength = Math.random() < 0.5 ? 4.5 : 6.5;
+                                newObs = createLogMesh(logLength);
+                                newObs.userData = { length: logLength };
+                                // 樹幹朝向轉為河流方向
+                                newObs.rotation.y = dir === 1 ? Math.PI / 2 : -Math.PI / 2;
+                            } else if (type === 'railroad') {
+                                newObs = createTrainMesh();
+                                // 火車朝向
+                                newObs.rotation.y = dir === 1 ? Math.PI / 2 : -Math.PI / 2;
+                                // 火車出發，號誌燈改為紅燈
+                                if (lane.userData.signalLightMesh) {
+                                    lane.userData.signalLightMesh.material.color.setHex(0xef4444);
+                                }
+                            }
+
+                            // 重置出發點：往右跑 (dir = 1) 由左邊 (-30) 出現，往左跑 (dir = -1) 由右邊 (30) 出現
+                            newObs.position.x = spawnX;
+                            lane.add(newObs);
+                            lane.userData.obstacles.push(newObs);
+
+                            lane.userData.lastSpawnTime = time;
+                            
+                            // 套用難度加成因子，動態重設下一次重生冷卻時間
+                            if (type === 'road') lane.userData.spawnDelay = (Math.random() * 2 + 1.8) * diffMult;
+                            if (type === 'river') lane.userData.spawnDelay = (Math.random() * 2 + 2.2) * diffMult;
+                            if (type === 'railroad') {
+                                lane.userData.spawnDelay = (Math.random() * 8 + 7.5) * diffMult;
+                                // 預期火車過完一陣子後，號誌回復綠色
+                                setTimeout(() => {
+                                    if (lane.userData.signalLightMesh) {
+                                        lane.userData.signalLightMesh.material.color.setHex(0x22c55e);
+                                    }
+                                }, 2500);
+                            }
+                        }
+                    }
+                });
+
+                // (F) 碰撞與收集偵測：金幣 (Coins) 旋轉與吸附判定
+                const playerPos = player.position;
+                const coinWorldPos = new THREE.Vector3();
+
+                lanes.forEach(lane => {
+                    // 1. 金幣旋轉與漂浮動態
+                    lane.userData.coins.forEach(coin => {
+                        coin.rotation.y += delta * 4.0; // 自轉
+                        coin.position.y = 0.5 + Math.sin(time * 3.5 + lane.userData.index) * 0.12; // 漂浮
+                    });
+
+                    // 2. 檢測金幣收集碰撞
+                    for (let i = lane.userData.coins.length - 1; i >= 0; i--) {
+                        const coin = lane.userData.coins[i];
+                        coin.getWorldPosition(coinWorldPos);
+
+                        // 計算玩家與金幣的距離 (1.2 世界單位內即觸發收集)
+                        if (playerPos.distanceTo(coinWorldPos) < 1.15) {
+                            playSound('coin');
+                            lane.remove(coin);
+                            lane.userData.coins.splice(i, 1);
+
+                            // 增加金幣並更新 HUD
+                            scoreCoins++;
+                            document.getElementById('coin-val').innerText = `🪙 ${scoreCoins}`;
+                        }
+                    }
+                });
+
+                // (G) 碰撞偵測 (檢測玩家與當前車道上的車/火車碰撞)
+                if (currentLane) {
+                    const playerGlobalX = player.position.x;
+                    
+                    if (currentLane.userData.type === 'road') {
+                        currentLane.userData.obstacles.forEach(car => {
+                            const carX = car.position.x;
+                            if (Math.abs(playerGlobalX - carX) < 1.3) {
+                                
+                                // --- 粉紅豬特殊能力：防撞護盾 ---
+                                if (selectedCharacter === 'pig' && hasShield) {
+                                    hasShield = false; // 盾破
+                                    if (shieldMesh) {
+                                        player.remove(shieldMesh); // 移除 3D 護盾外觀
+                                    }
+                                    playSound('shield_break'); // 播放護盾破裂音效
+                                    updateAbilityHUD();
+                                    
+                                    // 將這台車往外彈開，避免連續判定撞擊
+                                    car.position.x += currentLane.userData.direction * 5; 
+                                } else {
+                                    // 無盾狀態：死亡
+                                    gameOver('你被迎面而來的小汽車撞飛了！🚗💥');
+                                }
+                            }
+                        });
+                    } else if (currentLane.userData.type === 'railroad') {
+                        currentLane.userData.obstacles.forEach(train => {
+                            const trainX = train.position.x;
+                            // 火車非常長 (12格)，需要檢測長度範圍 (護盾對火車無效)
+                            if (Math.abs(playerGlobalX - trainX) < 6.5) {
+                                gameOver('天啊！你被高速火車輾過了！🚂⚡');
+                            }
+                        });
+                    }
+                }
+
+                // (H) 經典老鷹處決機制 (如果你在同一個地方發呆或退後太久)
+                const idleTime = time - lastForwardMoveTime;
+                if (idleTime > eagleTimeout && !eagleSpawned) {
+                    eagleSpawned = true;
+                    playSound('eagle');
+
+                    // 在玩家頭頂後方高空生成老鷹
+                    eagleMesh = createEagleMesh();
+                    eagleMesh.position.set(player.position.x, 15, player.position.z - 15);
+                    scene.add(eagleMesh);
+                }
+
+                if (eagleSpawned && eagleMesh) {
+                    const targetX = player.position.x;
+                    const targetY = player.position.y;
+                    const targetZ = player.position.z;
+
+                    // 朝玩家方向插值飛行
+                    eagleMesh.position.x = THREE.MathUtils.lerp(eagleMesh.position.x, targetX, 0.08);
+                    eagleMesh.position.y = THREE.MathUtils.lerp(eagleMesh.position.y, targetY, 0.08);
+                    eagleMesh.position.z = THREE.MathUtils.lerp(eagleMesh.position.z, targetZ + 2, 0.08);
+
+                    if (eagleMesh.position.distanceTo(player.position) < 1.5) {
+                        scene.remove(player); // 玩家被叼走
+                        gameOver('你原地發呆太久，被肚子餓的老鷹叼走了！🦅');
+                    }
+                }
+
+                // (I) 相機跟隨玩家與滾動軸：
+                // Z 軸完全改為對齊滾動軸中心點 autoScrollZ，X 軸繼續追蹤玩家以利橫向移動
+                const targetCameraX = player.position.x + 15;
+                const targetCameraZ = autoScrollZ + 18;
+                camera.position.x = THREE.MathUtils.lerp(camera.position.x, targetCameraX, 0.05);
+                camera.position.z = THREE.MathUtils.lerp(camera.position.z, targetCameraZ, 0.05);
+            } else {
+                // ----------------- 【首頁 3D 互動角色展示模式】 -----------------
+                if (player) {
+                    // 讓當前選取的角色在首頁大廳緩慢自轉與上下漂浮
+                    player.rotation.y += 0.015;
+                    player.position.y = Math.sin(time * 2.0) * 0.15 + 0.3; // 上下 Bobbing 動畫
+                    player.position.x = 0;
+                    player.position.z = 0;
+
+                    // 旋轉豬豬的護盾，在展示廳也有流光效果
+                    if (selectedCharacter === 'pig' && hasShield && shieldMesh) {
+                        shieldMesh.rotation.y += delta * 1.5;
+                    }
+                }
+
+                // 鏡頭徐徐繞行展示，極具動態立體美感
+                const orbitRadius = 6.0;
+                const showcaseCamX = orbitRadius * Math.cos(time * 0.25);
+                const showcaseCamZ = orbitRadius * Math.sin(time * 0.25);
+                camera.position.set(showcaseCamX, 4.0, showcaseCamZ);
+                camera.lookAt(0, 0.5, 0);
+            }
+
+            renderer.render(scene, camera);
+        }
+
+        // 輔助函式：判斷玩家在河流車道時是否踩在木頭上
+        function checkOnLog(riverLane) {
+            const playerGlobalX = player.position.x;
+            let landed = false;
+
+            riverLane.userData.obstacles.forEach(log => {
+                const logX = log.position.x;
+                const len = log.userData.length;
+                
+                // 檢查玩家 X 座標是否落在樹幹長度的一半內 (樹幹現在已沿 X 軸躺平，此處計算完全吻合)
+                if (Math.abs(playerGlobalX - logX) < (len / 2) + 0.3) {
+                    landed = true;
+                    // 將玩家定位吸附回與木頭同速度 (微調位置確保不嚴重歪斜)
+                    playerTargetPos.x = logX;
+                }
+            });
+
+            return landed;
+        }
+
+
+        // ----------------- 輸入操作綁定 (電腦鍵盤、虛擬按鈕、滑動手勢與 Enter 開始) -----------------
+
+        // 1. 鍵盤輸入事件
+        window.addEventListener('keydown', (e) => {
+            const key = e.key.toLowerCase();
+
+            // 如果遊戲未啟動，按下 Enter 或 Space 鍵可直接開始/重新開始遊戲
+            if (!gameActive) {
+                const isMenuOpen = !document.getElementById('menu-overlay').classList.contains('hidden');
+                const isGameOverOpen = !document.getElementById('gameover-overlay').classList.contains('hidden');
+                if ((key === 'enter' || key === ' ') && (isMenuOpen || isGameOverOpen)) {
+                    e.preventDefault();
+                    startGame();
+                    return;
+                }
+            }
+
+            if (!gameActive) return;
+
+            switch(key) {
+                case 'arrowup':
+                case 'w':
+                    movePlayer(0, 1);
+                    break;
+                case 'arrowdown':
+                case 's':
+                    movePlayer(0, -1);
+                    break;
+                case 'arrowleft':
+                case 'a':
+                    movePlayer(-1, 0);
+                    break;
+                case 'arrowright':
+                case 'd':
+                    movePlayer(1, 0);
+                    break;
+            }
+        });
+
+        // 2. 綁定螢幕虛擬按鈕
+        document.getElementById('ctrl-up').addEventListener('pointerdown', (e) => { e.preventDefault(); movePlayer(0, 1); });
+        document.getElementById('ctrl-down').addEventListener('pointerdown', (e) => { e.preventDefault(); movePlayer(0, -1); });
+        document.getElementById('ctrl-left').addEventListener('pointerdown', (e) => { e.preventDefault(); movePlayer(-1, 0); });
+        document.getElementById('ctrl-right').addEventListener('pointerdown', (e) => { e.preventDefault(); movePlayer(1, 0); });
+
+        // 3. 全螢幕手勢滑動與點擊系統 (Swipe & Tap)
+        let swipeStartX = 0;
+        let swipeStartY = 0;
+        const SWIPE_THRESHOLD = 30; // 滑動觸發的最小距離 (像素)
+
+        window.addEventListener('pointerdown', (e) => {
+            // 如果玩家點擊在按鈕或選單 UI 上，不觸發全螢幕手勢
+            if (e.target.closest('button') || e.target.closest('#menu-overlay') || e.target.closest('#gameover-overlay')) {
+                return;
+            }
+            swipeStartX = e.clientX;
+            swipeStartY = e.clientY;
+        });
+
+        window.addEventListener('pointerup', (e) => {
+            if (e.target.closest('button') || e.target.closest('#menu-overlay') || e.target.closest('#gameover-overlay')) {
+                return;
+            }
+            if (!swipeStartX || !swipeStartY) return;
+
+            const diffX = e.clientX - swipeStartX;
+            const diffY = e.clientY - swipeStartY;
+
+            // 重置起點
+            swipeStartX = 0;
+            swipeStartY = 0;
+
+            // 如果滑動距離極小，則視為單純的「輕點螢幕」 (Tap)
+            if (Math.abs(diffX) < SWIPE_THRESHOLD && Math.abs(diffY) < SWIPE_THRESHOLD) {
+                if (gameActive && !playerMoving) {
+                    movePlayer(0, 1); // 輕點直接往前走一步 (最直覺的行動機制)
+                }
+                return;
+            }
+
+            // 判斷是以水平還是垂直滑動為主
+            if (Math.abs(diffX) > Math.abs(diffY)) {
+                // 水平滑動
+                if (diffX > SWIPE_THRESHOLD) {
+                    movePlayer(1, 0); // 往右滑
+                } else if (diffX < -SWIPE_THRESHOLD) {
+                    movePlayer(-1, 0); // 往左滑
+                }
+            } else {
+                // 垂直滑動
+                if (diffY > SWIPE_THRESHOLD) {
+                    movePlayer(0, -1); // 往下滑 (後退)
+                } else if (diffY < -SWIPE_THRESHOLD) {
+                    movePlayer(0, 1); // 往上滑 (前進)
+                }
+            }
+        });
+
+
+        // ----------------- 視窗載入完成 -----------------
+        window.onload = function() {
+            initEngine();
+            // 在啟動時先展示一隻展示用的小雞
+            player = createPlayerMesh('chicken');
+            scene.add(player);
+            
+            // 預先生成一些基本安全車道，提供主頁背景觀賞
+            for (let i = -5; i < 15; i++) {
+                const lane = createLane(i);
+                lanes.push(lane);
+                laneIndex = i + 1;
+            }
+
+            // 啟動主渲染循環
+            animate();
+            updateAbilityHUD();
+        };
+
+    </script>
+</body>
+</html>

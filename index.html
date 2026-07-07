@@ -10,6 +10,8 @@
     <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
     <!-- FontAwesome Icons -->
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-firestore-compat.js"></script>
     <style>
         body {
             margin: 0;
@@ -203,7 +205,25 @@
                         </button>
                     </div>
                 </div>
+<div class="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-6">
+                <div class="bg-slate-900/60 rounded-2xl p-4 border border-slate-800 text-left">
+                    <label class="block text-xs font-black text-slate-400 uppercase tracking-widest mb-2 flex items-center gap-1">
+                        <i class="fa-solid fa-id-card text-yellow-400"></i> 登錄英雄暱稱
+                    </label>
+                    <input type="text" id="player-nickname" maxlength="10" placeholder="輸入你的英雄名字..." 
+                        class="w-full bg-slate-950 border border-slate-800 focus:border-yellow-400 rounded-xl px-4 py-2 text-xs text-white font-bold outline-none transition-all">
+                    <p class="text-[10px] text-slate-500 mt-2 font-mono">※ 限 10 字內，死後分數會同步上傳。</p>
+                </div>
 
+                <div class="bg-slate-900/60 rounded-2xl p-4 border border-slate-800 text-left">
+                    <span class="font-black text-yellow-400 block mb-2 text-xs uppercase tracking-widest flex items-center gap-1">
+                        <i class="fa-solid fa-trophy text-amber-400"></i> 全球英雄榜 (Top 10)
+                    </span>
+                    <div id="leaderboard-list" class="space-y-1 max-h-28 overflow-y-auto text-xs font-mono text-slate-300 pr-1">
+                        <p class="text-slate-500 animate-pulse italic">排行榜連線中...</p>
+                    </div>
+                </div>
+            </div>
             </div>
 
             <!-- 操作提示與規則 -->
@@ -300,6 +320,59 @@
 
     <!-- 遊戲核心邏輯 -->
     <script>
+        // =========================================================================
+        // === Firebase 初始化與排行榜邏輯 ===
+        // =========================================================================
+        const firebaseConfig = {
+            apiKey: "AIzaSyCDstFRAfeM3oTLDxT3EobCEgVbSbXUqHQ",
+            authDomain: "cross-roaddddddd.firebaseapp.com",
+            projectId: "cross-roaddddddd",
+            storageBucket: "cross-roaddddddd.firebasestorage.app",
+            messagingSenderId: "310346984600",
+            appId: "1:310346984600:web:d8f4de8b9a30ee45a434ed",
+            measurementId: "G-1B92S738VJ"
+        };
+
+        firebase.initializeApp(firebaseConfig);
+        const db = firebase.firestore();
+
+        // 撈取排行
+        function fetchLeaderboard() {
+            const listContainer = document.getElementById('leaderboard-list');
+            if (!listContainer) return;
+            db.collection("leaderboard").orderBy("score", "desc").limit(10).get()
+              .then((querySnapshot) => {
+                  listContainer.innerHTML = "";
+                  if (querySnapshot.empty) {
+                      listContainer.innerHTML = `<p class="text-slate-500 italic">尚無排行，快來搶佔第一名！</p>`;
+                      return;
+                  }
+                  let rank = 1;
+                  querySnapshot.forEach((doc) => {
+                      const data = doc.data();
+                      let badge = `${rank}.`;
+                      if (rank === 1) badge = "🥇 1st";
+                      if (rank === 2) badge = "🥈 2nd";
+                      if (rank === 3) badge = "🥉 3rd";
+                      listContainer.innerHTML += `
+                          <div class="flex justify-between items-center py-1 border-b border-slate-800/40">
+                              <span class="font-bold ${rank <= 3 ? 'text-yellow-400' : 'text-slate-300'}">${badge} ${data.name || '匿名英雄'}</span>
+                              <span class="font-black text-cyan-400">${data.score} 分</span>
+                          </div>`;
+                      rank++;
+                  });
+              }).catch(() => { listContainer.innerHTML = `<p class="text-red-400/80">無法載入排行榜</p>`; });
+        }
+
+        // 上傳排行
+        function uploadScoreToFirebase(nickname, finalScore) {
+            if (!nickname || nickname.trim() === "") nickname = "匿名玩家";
+            db.collection("leaderboard").add({
+                name: nickname.trim(),
+                score: parseInt(finalScore, 10),
+                timestamp: firebase.firestore.FieldValue.serverTimestamp()
+            }).then(() => { fetchLeaderboard(); });
+        }
         // ----------------- 音效合成系統 (Web Audio API) -----------------
         let audioCtx = null;
         let isMuted = false;
@@ -1554,6 +1627,7 @@
 
         // 開始遊戲
         function startGame() {
+            fetchLeaderboard();
             // 防範未解鎖角色強行開始
             if (!unlockedCharacters[selectedCharacter]) {
                 playSound('fail');
@@ -1626,6 +1700,8 @@
 
             // 顯示 GameOver Overlay
             document.getElementById('gameover-overlay').classList.remove('hidden');
+            const playerNickname = document.getElementById('player-nickname')?.value || "匿名英雄";
+            uploadScoreToFirebase(playerNickname, score);
         }
 
         // 2. 玩家移動操作響應 (加入了嚴格的時間與位移防護罩，防止穿樹)
@@ -2120,6 +2196,12 @@
 
         // ----------------- 視窗載入完成 -----------------
         window.onload = function() {
+             === 📌 自動載入上次的名字與最新排行榜 ===
+            const savedName = localStorage.getItem('vch_player_name');
+            if (savedName && document.getElementById('player-nickname')) {
+                document.getElementById('player-nickname').value = savedName;
+            }
+            fetchLeaderboard();
             initEngine();
             
             // 讀取瀏覽器歷史進度 (金幣、最高分與已解鎖英雄)
